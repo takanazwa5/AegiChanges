@@ -8,26 +8,14 @@ file1 = []
 file2 = []
 
 
-def choose_file1():
-    global file1
+def choose_file(file_var, label_var):
     file_path = filedialog.askopenfilename(filetypes=[("ASS files", "*.ass")])
 
     if file_path:
-        file1_label.config(text=os.path.basename(file_path))
+        label_var.config(text=os.path.basename(file_path))
 
         with open(file_path, "r", encoding="utf-8") as f:
-            file1 = f.readlines()
-
-
-def choose_file2():
-    global file2
-    file_path = filedialog.askopenfilename(filetypes=[("ASS files", "*.ass")])
-
-    if file_path:
-        file2_label.config(text=os.path.basename(file_path))
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            file2 = f.readlines()
+            file_var[:] = f.readlines()
 
 
 def compare_events():
@@ -179,12 +167,12 @@ file2_button_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10, side="left"
 compare_button_frame = tk.Frame(buttons_frame, bg="black")
 compare_button_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10, side="left")
 
-file1_button = tk.Button(file1_button_frame, text="Choose old file", command=choose_file1, bg="gray", fg="white")
+file1_button = tk.Button(file1_button_frame, text="Choose old file", command=lambda: choose_file(file1, file1_label), bg="gray", fg="white")
 file1_button.pack(fill=tk.BOTH)
 file1_label = tk.Label(file1_button_frame, bg="black", fg="white", width=30)
 file1_label.pack(fill=tk.BOTH)
 
-file2_button = tk.Button(file2_button_frame, text="Choose new file", command=choose_file2, bg="gray", fg="white")
+file2_button = tk.Button(file2_button_frame, text="Choose new file", command=lambda: choose_file(file2, file2_label), bg="gray", fg="white")
 file2_button.pack(fill=tk.BOTH)
 file2_label = tk.Label(file2_button_frame, bg="black", fg="white", width=30)
 file2_label.pack(fill=tk.BOTH)
