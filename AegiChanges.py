@@ -1,198 +1,215 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from difflib import Differ
 import os
+from difflib import Differ
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QWidget,
+    QMainWindow,
+    QGridLayout,
+    QLabel,
+    QPushButton,
+    QTextEdit,
+    QFileDialog,
+    QMessageBox,
+    QMenuBar,
+)
 
 
-file1 = []
-file2 = []
+try:
+    from ctypes import windll
+    myappid = 'mycompany.myproduct.subproduct.version'
+    windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+except ImportError:
+    pass
 
 
-def choose_file(file_var, label_var):
-    file_path = filedialog.askopenfilename(filetypes=[("ASS files", "*.ass")])
+# GRAY: #24292E
+# RED: #B31D28
+# GREEN: #22863A
+# DARKRED: #450C0F
+# DARKGREEN: #113A1B
+
+
+old_file : list[str] = []
+new_file : list[str] = []
+
+
+def on_load_file_button_pressed(file: list[str], label: QLabel) -> None:
+    load_file(file, label)
+
+
+def on_compare_button_pressed() -> None:
+    window.output.clear()
+
+    if len(old_file) == 0 and len(new_file) == 0:
+        print_line("Files not selected")
+        return
+
+    if len(old_file) == 0:
+        print_line("Old file not selected")
+        return
+
+    if len(new_file) == 0:
+        print_line("New file not selected")
+        return
+    
+    compare_result : list[str] = compare_files(old_file, new_file)
+    print_changes(compare_result)
+
+
+def load_file(file_var: list[str], label: QLabel) -> None:
+    file_path = QFileDialog.getOpenFileName(filter="ASS files (*.ass)")[0]
 
     if file_path:
-        label_var.config(text=os.path.basename(file_path))
+        label.setText(os.path.basename(file_path))
 
         with open(file_path, "r", encoding="utf-8") as f:
             file_var[:] = f.readlines()
 
 
-def compare_events():
-        result_text.config(state=tk.NORMAL)
-        result_text.delete("1.0", tk.END)
-
-        display_changes(file1, file2)
-
-        result_text.config(state=tk.DISABLED)
-
-
-def display_changes(file1, file2):
+def extract_events(file: list[str]) -> list[str]:
     try:
-        file1_events_index = file1.index("[Events]\n")
-        file2_events_index = file2.index("[Events]\n")
+        events_index : int = file.index("[Events]\n")
     except ValueError:
-        result_text.insert(tk.END, "[Events] section not found in one or both files.")
-        return
+        return []
 
-    events1 = file1[file1_events_index + 2:]
-    events2 = file2[file2_events_index + 2:]
+    return file[events_index + 2:]
 
-    text_to_compare1 = []
-    text_to_compare2 = []
 
-    max_length = max(len(events1), len(events2))
+def clean_events(file: list[str]) -> list[str]:
+    result : list[str] = []
 
-    for i in range(max_length):
+    for line in file:
+        parts = line.split(",", maxsplit=9)
 
-        if i < len(events1):
-            event1 = events1[i]
-            format1 = event1.split(":", maxsplit=1)[0]
-            event1_parts = event1.split(",", maxsplit=9)
-            start1, end1, text1 = event1_parts[1], event1_parts[2], event1_parts[-1]
+        parts[0] = parts[0].split(":", maxsplit=1)[0] + ": "
+        if parts[0] == "Comment: ":
+            parts[0] += "\u00A0"
 
-            if not event1_parts[3] == "TLmode":
-                
-                if format1 == "Comment":
-                    format1 += " "
+        if parts[3] == "TLmode" or line == "":
+            continue
+        
+        result.append(f"{parts[0]}{parts[1]}, {parts[2]}, {parts[-1]}")
 
-                text_to_compare1.append(f"{format1} {start1}, {end1}, {text1}")
 
-        if i < len(events2):
-            event2 = events2[i]
-            format2 = event2.split(":", maxsplit=1)[0]
-            event2_parts = event2.split(",", maxsplit=9)
-            start2, end2, text2 = event2_parts[1], event2_parts[2], event2_parts[-1]
+    return result
 
-            if not event2_parts[3] == "TLmode":
 
-                if format2 == "Comment":
-                    format2 += " "
+def compare_files(old_file: list[str], new_file: list[str]) -> list[str]:
+    old_file = extract_events(old_file)
+    new_file = extract_events(new_file)
 
-                text_to_compare2.append(f"{format2} {start2}, {end2}, {text2}")
+    if len(old_file) == 0 and len(new_file) == 0:
+        print_line("[Events] section not found in both files")
+        return []
+    
+    if len(old_file) == 0:
+        print_line("[Events] section not found in old file")
+        return []
 
-    differ = Differ()
-    diff = list(differ.compare(text_to_compare1, text_to_compare2))
+    if len(new_file) == 0:
+        print_line("[Events] section not found in new file")
+        return []
 
-    for line in diff:
+    old_file = clean_events(old_file)
+    new_file = clean_events(new_file)
 
-        if line.startswith("+"):
-            result_text.insert(tk.END, line, "green")
+    return list(Differ().compare(old_file, new_file))
 
-        elif line.startswith("-"):
-            result_text.insert(tk.END, line, "red")
 
+def print_line(text: str) -> None:
+    window.output.append(text.replace("\n", ""))
+
+
+def print_changes(compare_result: list[str]) -> None:
+    for line in compare_result:
+
+        if line.startswith("-"):
+            print_line(f"<span style='background-color: #450C0F; color: white; font-family: Consolas'>{line}</span>")
+        
+        elif line.startswith("+"):
+            print_line(f"<span style='background-color: #113A1B; color: white; font-family: Consolas'>{line}</span>")
+        
         elif not line.startswith("?"):
-            result_text.insert(tk.END, line)
+            print_line(line)
 
 
-def save_changes_to_file():
-    file_to_save = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+def save_changes_to_file(type: str) -> None:
+    match type:
+        case "txt":
+            filter = "Text files (*.txt)"
+        case "html":
+            filter = "HTML files (*.html)"
+        case "diff":
+            filter = "Diff files (*.diff)"
+
+    file_to_save = QFileDialog.getSaveFileName(filter=filter)[0]
 
     if file_to_save:
         try:
             with open(file_to_save, "w", encoding="utf-8") as f:
-                f.write(result_text.get("1.0", tk.END))
+                if type in ["txt", "diff"]:
+                    f.write(window.output.toPlainText())
+                elif type == "html":
+                    html_file = window.output.toHtml()
+                    html_file = html_file.replace('<body style="', \
+                    '<body style="background-color: #24292E; color: white;', 1)
+                    f.write(html_file)
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred while saving changes to file: {str(e)}")
+            QMessageBox.critical(None, "Error", f"An error occurred while saving changes to file: {str(e)}")
 
 
-def switch_to_dark_mode():
-    window.config(bg="black")
-    file1_button.config(bg="gray", fg="white")
-    file2_button.config(bg="gray", fg="white")
-    compare_button.config(bg="gray", fg="white")
-    result_text.config(bg="black", fg="white")
-    result_text.tag_configure("red", background="#990000")
-    result_text.tag_configure("green", background="#009900")
-    buttons_frame.config(bg="black")
-    file1_button_frame.config(bg="black")
-    file2_button_frame.config(bg="black")
-    compare_button_frame.config(bg="black")
-    file1_label.config(bg="black", fg="white")
-    file2_label.config(bg="black", fg="white")
+app = QApplication([])
+app.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "icon.ico")))
 
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("AegiChanges")
 
-def switch_to_light_mode():
-    window.config(bg="white")
-    file1_button.config(bg="lightgray", fg="black")
-    file2_button.config(bg="lightgray", fg="black")
-    compare_button.config(bg="lightgray", fg="black")
-    result_text.config(bg="white", fg="black")
-    result_text.tag_configure("red", background="#cc0000")
-    result_text.tag_configure("green", background="#00cc00")
-    buttons_frame.config(bg="white")
-    file1_button_frame.config(bg="white")
-    file2_button_frame.config(bg="white")
-    compare_button_frame.config(bg="white")
-    file1_label.config(bg="white", fg="black")
-    file2_label.config(bg="white", fg="black")
+        menubar = QMenuBar()
+        self.setMenuBar(menubar)
 
+        file_menu = menubar.addMenu("File")
+        file_menu.addAction("Save changes to text file", lambda: save_changes_to_file("txt"))
+        file_menu.addAction("Save changes to html file", lambda: save_changes_to_file("html"))
+        file_menu.addAction("Save changes to diff file", lambda: save_changes_to_file("diff"))
+        file_menu.addSeparator()
+        file_menu.addAction("Exit", self.close)
 
-# GUI
-window = tk.Tk()
-window.title("AegiChanges")
-window.state("zoomed")
-window.config(bg="black")
+        layout = QGridLayout()
 
+        old_file_button = QPushButton("Load old file")
+        old_file_button.clicked.connect(lambda: on_load_file_button_pressed(old_file, old_file_label))
 
-# Menu Bar
-menu_bar = tk.Menu(window)
+        new_file_button = QPushButton("Load new file")
+        new_file_button.clicked.connect(lambda: on_load_file_button_pressed(new_file, new_file_label))
+        
+        old_file_label = QLabel()
+        old_file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        new_file_label = QLabel()
+        new_file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        compare_button = QPushButton("Compare Files")
+        compare_button.clicked.connect(on_compare_button_pressed)
 
-file_menu = tk.Menu(menu_bar, tearoff=0)
-file_menu.add_command(label="Save Changes to File", command=save_changes_to_file)
-file_menu.add_separator()
-file_menu.add_command(label="Exit", command=window.quit)
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setFontFamily("Consolas")
 
-color_mode_menu = tk.Menu(menu_bar, tearoff=0)
-color_mode_menu.add_command(label="Dark Mode", command=switch_to_dark_mode)
-color_mode_menu.add_command(label="Light Mode", command=switch_to_light_mode)
+        layout.addWidget(old_file_button, 0, 0)
+        layout.addWidget(old_file_label, 1, 0)
+        layout.addWidget(new_file_button, 0, 1)
+        layout.addWidget(new_file_label, 1, 1)
+        layout.addWidget(compare_button, 0, 2)
+        layout.addWidget(self.output, 2, 0, 1, 3)
 
-menu_bar.add_cascade(label="File", menu=file_menu)
-menu_bar.add_cascade(label="Color Mode", menu=color_mode_menu)
-
-window.config(menu=menu_bar)
-
-
-# Buttons
-buttons_frame = tk.Frame(window, bg="black")
-buttons_frame.pack(fill=tk.BOTH, padx=10, pady=10)
-
-file1_button_frame = tk.Frame(buttons_frame, bg="black")
-file1_button_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10, side="left")
-
-file2_button_frame = tk.Frame(buttons_frame, bg="black")
-file2_button_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10, side="left")
-
-compare_button_frame = tk.Frame(buttons_frame, bg="black")
-compare_button_frame.pack(expand=True, fill=tk.BOTH, padx=10, pady=10, side="left")
-
-file1_button = tk.Button(file1_button_frame, text="Choose old file", command=lambda: choose_file(file1, file1_label), bg="gray", fg="white")
-file1_button.pack(fill=tk.BOTH)
-file1_label = tk.Label(file1_button_frame, bg="black", fg="white", width=30)
-file1_label.pack(fill=tk.BOTH)
-
-file2_button = tk.Button(file2_button_frame, text="Choose new file", command=lambda: choose_file(file2, file2_label), bg="gray", fg="white")
-file2_button.pack(fill=tk.BOTH)
-file2_label = tk.Label(file2_button_frame, bg="black", fg="white", width=30)
-file2_label.pack(fill=tk.BOTH)
-
-compare_button = tk.Button(compare_button_frame, text="Compare Files", command=compare_events, bg="gray", fg="white", width=30)
-compare_button.pack(fill=tk.BOTH)
-
-
-# Result Text
-scrollbar = tk.Scrollbar(window, orient=tk.VERTICAL)
-scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-result_text = tk.Text(window, wrap=tk.WORD, bg="black", fg="white", yscrollcommand=scrollbar.set, state=tk.DISABLED)
-result_text.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
-
-scrollbar.config(command=result_text.yview)
-
-
-# Tag Configuration
-result_text.tag_configure("red", background="#990000")
-result_text.tag_configure("green", background="#009900")
-
-window.mainloop()
+        widget = QWidget()
+        widget.setLayout(layout)
+        self.setStyleSheet(".QTextEdit, .QWidget {background-color: #24292E; color: white;} .QLabel {color: white;}")
+        self.setCentralWidget(widget)
+    
+window = MainWindow()
+window.showMaximized()
+app.exec()
