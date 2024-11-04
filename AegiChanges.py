@@ -16,14 +16,6 @@ from PyQt6.QtWidgets import (
 )
 
 
-try:
-    from ctypes import windll
-    myappid = 'mycompany.myproduct.subproduct.version'
-    windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-except ImportError:
-    pass
-
-
 # GRAY: #24292E
 # RED: #B31D28
 # GREEN: #22863A
@@ -161,7 +153,6 @@ def save_changes_to_file(type: str) -> None:
 
 
 app = QApplication([])
-app.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "icon.ico")))
 
 class MainWindow(QMainWindow):
     def __init__(self):
