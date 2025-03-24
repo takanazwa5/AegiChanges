@@ -78,6 +78,9 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def cleanEvents(self, events):
         for line in events:
+            style = line.split(",", 4)[3]
+            if style == "TLmode":
+                continue
             format = line.split(":", 1)[0]
             start = line.split(",", 2)[1]
             end = line.split(",", 3)[2]
