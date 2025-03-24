@@ -1,3 +1,4 @@
+import resources_rc
 import os
 from difflib import Differ
 from PySide6 import QtCore, QtWidgets, QtGui
@@ -11,7 +12,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.app = app
         self.setWindowTitle("AegiChanges")
-        #self.setWindowIcon(QtGui.QIcon(":/icon.png"))
+        self.setWindowIcon(QtGui.QIcon(":/icon.png"))
         
         self.oldFileButton = QtWidgets.QPushButton("Load old file...")
         self.oldFileButton.pressed.connect(self.loadOldFile)
