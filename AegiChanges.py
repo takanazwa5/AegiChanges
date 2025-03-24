@@ -1,206 +1,214 @@
 import os
 from difflib import Differ
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import (
-    QApplication,
-    QWidget,
-    QMainWindow,
-    QGridLayout,
-    QLabel,
-    QPushButton,
-    QTextEdit,
-    QFileDialog,
-    QMessageBox,
-    QMenuBar,
-)
+from PySide6 import QtCore, QtWidgets, QtGui
 
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self, app):
+        super().__init__()
+        self.oldFile = []
+        self.newFile = []
+        self.savePath = ""
+        
+        self.app = app
+        self.setWindowTitle("AegiChanges")
+        #self.setWindowIcon(QtGui.QIcon(":/icon.png"))
+        
+        self.oldFileButton = QtWidgets.QPushButton("Load old file...")
+        self.oldFileButton.pressed.connect(self.loadOldFile)
+        
+        self.newFileButton = QtWidgets.QPushButton("Load new file...")
+        self.newFileButton.pressed.connect(self.loadNewFile)
 
-# GRAY: #24292E
-# RED: #B31D28
-# GREEN: #22863A
-# DARKRED: #450C0F
-# DARKGREEN: #113A1B
+        self.saveFileCheckbox = QtWidgets.QCheckBox("Save changes to file")
+        
+        self.compareButton = QtWidgets.QPushButton("Compare")
+        self.compareButton.pressed.connect(self.compareFiles)
 
+        buttonsHolder = QtWidgets.QWidget()
+        buttonsHolder.setLayout(QtWidgets.QHBoxLayout())
+        buttonsHolder.layout().addWidget(self.oldFileButton)
+        buttonsHolder.layout().addWidget(self.newFileButton)
+        buttonsHolder.layout().addWidget(self.compareButton)
+        buttonsHolder.layout().addWidget(self.saveFileCheckbox)
+        
+        self.output = TextEdit()
 
-old_file : list[str] = []
-new_file : list[str] = []
+        centralWidget = QtWidgets.QWidget()
+        centralWidget.setLayout(QtWidgets.QVBoxLayout())
+        centralWidget.layout().addWidget(buttonsHolder)
+        centralWidget.layout().addWidget(self.output)
+        
+        self.setCentralWidget(centralWidget)
+        self.showMaximized()
 
+    def setUIDisabled(self, value):
+        self.oldFileButton.setDisabled(value)
+        self.newFileButton.setDisabled(value)
+        self.compareButton.setDisabled(value)
+        self.saveFileCheckbox.setDisabled(value)
+        
+    def loadOldFile(self):
+        filePath = QtWidgets.QFileDialog.getOpenFileName(self, "Load old file", filter="ASS files (*.ass)")[0]
+        if filePath:
+            try:
+                with open(filePath, "r", encoding="utf-8") as f:
+                    self.oldFile = f.readlines()
+                    self.oldFileButton.setStyleSheet("background-color: darkgreen")
+            except Exception as e:
+                self.output.appendError(f"Error loading old file: {e}")
+                self.oldFileButton.setStyleSheet("background-color: darkred")
 
-def on_load_file_button_pressed(file: list[str], label: QLabel) -> None:
-    load_file(file, label)
+    def loadNewFile(self):
+        filePath = QtWidgets.QFileDialog.getOpenFileName(self, "Load new file", filter="ASS files (*.ass)")[0]
+        if filePath:
+            self.savePath = os.path.dirname(filePath)
+            print(self.savePath)
+            try:
+                with open(filePath, "r", encoding="utf-8") as f:
+                    self.newFile = f.readlines()
+                    self.newFileButton.setStyleSheet("background-color: darkgreen")
+            except Exception as e:
+                self.output.appendError(f"Error loading new file: {e}")
+                self.newFileButton.setStyleSheet("background-color: darkred")
 
-
-def on_compare_button_pressed() -> None:
-    window.output.clear()
-
-    if len(old_file) == 0 and len(new_file) == 0:
-        print_line("Files not selected")
-        return
-
-    if len(old_file) == 0:
-        print_line("Old file not selected")
-        return
-
-    if len(new_file) == 0:
-        print_line("New file not selected")
-        return
+    def extractEventsSection(self, file):
+        eventsSectionIndex = file.index("[Events]\n")
+        return file[eventsSectionIndex + 2:]
     
-    compare_result : list[str] = compare_files(old_file, new_file)
-    print_changes(compare_result)
+    def cleanEvents(self, events):
+        for line in events:
+            format = line.split(":", 1)[0]
+            start = line.split(",", 2)[1]
+            end = line.split(",", 3)[2]
+            text = line.split(",", 9)[-1]
+            format += " " if format == "Comment" else ""
+            line = f"{format} | {start} | {end} | {text}"
+            yield line
 
+    def compareFiles(self):
+        self.output.clear()
 
-def load_file(file_var: list[str], label: QLabel) -> None:
-    file_path = QFileDialog.getOpenFileName(filter="ASS files (*.ass)")[0]
-
-    if file_path:
-        label.setText(os.path.basename(file_path))
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            file_var[:] = f.readlines()
-
-
-def extract_events(file: list[str]) -> list[str]:
-    try:
-        events_index : int = file.index("[Events]\n")
-    except ValueError:
-        return []
-
-    return file[events_index + 2:]
-
-
-def clean_events(file: list[str]) -> list[str]:
-    result : list[str] = []
-
-    for line in file:
-        parts = line.split(",", maxsplit=9)
-
-        parts[0] = parts[0].split(":", maxsplit=1)[0] + ": "
-        if parts[0] == "Comment: ":
-            parts[0] += "\u00A0"
-
-        if parts[3] == "TLmode" or line == "":
-            continue
+        if not self.oldFile:
+            self.output.appendError("Old file not loaded")
+            return
         
-        result.append(f"{parts[0]}{parts[1]}, {parts[2]}, {parts[-1]}")
-
-
-    return result
-
-
-def compare_files(old_file: list[str], new_file: list[str]) -> list[str]:
-    old_file = extract_events(old_file)
-    new_file = extract_events(new_file)
-
-    if len(old_file) == 0 and len(new_file) == 0:
-        print_line("[Events] section not found in both files")
-        return []
-    
-    if len(old_file) == 0:
-        print_line("[Events] section not found in old file")
-        return []
-
-    if len(new_file) == 0:
-        print_line("[Events] section not found in new file")
-        return []
-
-    old_file = clean_events(old_file)
-    new_file = clean_events(new_file)
-
-    return list(Differ().compare(old_file, new_file))
-
-
-def print_line(text: str) -> None:
-    window.output.append(text.replace("\n", ""))
-
-
-def print_changes(compare_result: list[str]) -> None:
-    for line in compare_result:
-
-        if line.startswith("-"):
-            print_line(f"<span style='background-color: #450C0F; color: white; font-family: Consolas'>{line}</span>")
+        if not self.newFile:
+            self.output.appendError("New file not loaded")
+            
+        oldEvents = self.extractEventsSection(self.oldFile)
+        newEvents = self.extractEventsSection(self.newFile)
         
-        elif line.startswith("+"):
-            print_line(f"<span style='background-color: #113A1B; color: white; font-family: Consolas'>{line}</span>")
+        if not oldEvents:
+            self.output.appendError("[Events] section not found in old file")
+            return
         
-        elif not line.startswith("?"):
-            print_line(line)
+        if not newEvents:
+            self.output.appendError("[Events] section not found in new file")
+            return
+        
+        self.setUIDisabled(True)
+        
+        oldEvents = list(self.cleanEvents(oldEvents))
+        newEvents = list(self.cleanEvents(newEvents))
+        
+        differ = Differ()
+        diff = list(differ.compare(oldEvents, newEvents))
 
+        for i in range(len(diff)):
+            previousLine = diff[i - 1] if i > 0 else ""
+            line = diff[i]
+            nextLine = diff[i + 1] if i + 1 < len(diff) else ""
 
-def save_changes_to_file(type: str) -> None:
-    match type:
-        case "txt":
-            filter = "Text files (*.txt)"
-        case "html":
-            filter = "HTML files (*.html)"
-        case "diff":
-            filter = "Diff files (*.diff)"
+            if line.startswith("-"):
+                if nextLine.startswith("?"):
+                    for j in range(len(line)):
+                        if j < len(nextLine):
+                            if not nextLine[j] in [" ", "?"]:
+                                self.output.appendRemovedHighlighted(line[j])
+                                continue
+                        self.output.appendRemoved(line[j])
+                elif nextLine.startswith("+"):
+                    self.output.appendRemoved(line)
+                else:
+                    self.output.appendRemovedHighlighted(line)
 
-    file_to_save = QFileDialog.getSaveFileName(filter=filter)[0]
+            elif line.startswith("+"):
+                if nextLine.startswith("?"):
+                    for j in range(len(line)):
+                        if j < len(nextLine):
+                            if not nextLine[j] in [" ", "?"]:
+                                self.output.appendAddedHighlighted(line[j])
+                                continue
+                        self.output.appendAdded(line[j])
+                elif previousLine.startswith("?"):
+                    self.output.appendAdded(line)
+                else:
+                    self.output.appendAddedHighlighted(line)
 
-    if file_to_save:
-        try:
-            with open(file_to_save, "w", encoding="utf-8") as f:
-                if type in ["txt", "diff"]:
-                    f.write(window.output.toPlainText())
-                elif type == "html":
-                    html_file = window.output.toHtml()
-                    html_file = html_file.replace('<body style="', \
-                    '<body style="background-color: #24292E; color: white;', 1)
-                    f.write(html_file)
-        except Exception as e:
-            QMessageBox.critical(None, "Error", f"An error occurred while saving changes to file: {str(e)}")
+            elif not line.startswith("?"):
+                self.output.appendUnchangedLine(line)
 
+        if self.saveFileCheckbox.isChecked():
+            try:
+                with open(os.path.join(self.savePath, "changes.diff"), "w", encoding="utf-8") as f:
+                    f.write(self.output.toPlainText())
+            except Exception as e:
+                self.output.appendError(f"Error saving file: {e}")
 
-app = QApplication([])
+        self.setUIDisabled(False)
 
-class MainWindow(QMainWindow):
+class TextEdit(QtWidgets.QTextEdit):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AegiChanges")
+        self.defaultBgColor = QtGui.QColor.fromRgbF(0, 0, 0, 0)
+        self.setReadOnly(True)
+        self.setFontPointSize(10)
+        self.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont))
+        preferredFonts = ["JetBrains Mono", "Consolas"]
+        for font in preferredFonts:
+            if font in QtGui.QFontDatabase.families():
+                self.setFont(QtGui.QFont(font))
+                break
 
-        menubar = QMenuBar()
-        self.setMenuBar(menubar)
+    def appendError(self, text):
+        self.setTextBackgroundColor(self.defaultBgColor)
+        self.setFontWeight(QtGui.QFont.Weight.Bold)
+        self.setTextColor(QtGui.QColor("red"))
+        self.append(text)
+        self.setTextColor(QtGui.QColor("white"))
+        self.setFontWeight(QtGui.QFont.Weight.Normal)
 
-        file_menu = menubar.addMenu("File")
-        file_menu.addAction("Save changes to text file", lambda: save_changes_to_file("txt"))
-        file_menu.addAction("Save changes to html file", lambda: save_changes_to_file("html"))
-        file_menu.addAction("Save changes to diff file", lambda: save_changes_to_file("diff"))
-        file_menu.addSeparator()
-        file_menu.addAction("Exit", self.close)
+    def appendRemoved(self, text):
+        if not self.textBackgroundColor() == QtGui.QColor("darkRed"):
+            self.setTextBackgroundColor(QtGui.QColor("darkRed"))
+        self.insertPlainText(text)
+        QtWidgets.QApplication.processEvents()
 
-        layout = QGridLayout()
+    def appendRemovedHighlighted(self, text):
+        if not self.textBackgroundColor() == QtGui.QColor("red"):
+            self.setTextBackgroundColor(QtGui.QColor("red"))
+        self.insertPlainText(text)
+        QtWidgets.QApplication.processEvents()
 
-        old_file_button = QPushButton("Load old file")
-        old_file_button.clicked.connect(lambda: on_load_file_button_pressed(old_file, old_file_label))
+    def appendAdded(self, text):
+        if not self.textBackgroundColor() == QtGui.QColor("darkGreen"):
+            self.setTextBackgroundColor(QtGui.QColor("darkGreen"))
+        self.insertPlainText(text)
+        QtWidgets.QApplication.processEvents()
 
-        new_file_button = QPushButton("Load new file")
-        new_file_button.clicked.connect(lambda: on_load_file_button_pressed(new_file, new_file_label))
-        
-        old_file_label = QLabel()
-        old_file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        new_file_label = QLabel()
-        new_file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        compare_button = QPushButton("Compare Files")
-        compare_button.clicked.connect(on_compare_button_pressed)
+    def appendAddedHighlighted(self, text):
+        if not self.textBackgroundColor() == QtGui.QColor("green"):
+            self.setTextBackgroundColor(QtGui.QColor("green"))
+        self.insertPlainText(text)
+        QtWidgets.QApplication.processEvents()
 
-        self.output = QTextEdit()
-        self.output.setReadOnly(True)
-        self.output.setFontFamily("Consolas")
+    def appendUnchangedLine(self, text):
+        if not self.textBackgroundColor() == self.defaultBgColor:
+            self.setTextBackgroundColor(self.defaultBgColor)
+        self.insertPlainText(text)
+        QtWidgets.QApplication.processEvents()    
 
-        layout.addWidget(old_file_button, 0, 0)
-        layout.addWidget(old_file_label, 1, 0)
-        layout.addWidget(new_file_button, 0, 1)
-        layout.addWidget(new_file_label, 1, 1)
-        layout.addWidget(compare_button, 0, 2)
-        layout.addWidget(self.output, 2, 0, 1, 3)
-
-        widget = QWidget()
-        widget.setLayout(layout)
-        self.setStyleSheet(".QTextEdit, .QWidget {background-color: #24292E; color: white;} .QLabel {color: white;}")
-        self.setCentralWidget(widget)
-    
-window = MainWindow()
-window.showMaximized()
-app.exec()
+if __name__ == "__main__":
+    app = QtWidgets.QApplication([])
+    window = MainWindow(app)
+    app.exec()
